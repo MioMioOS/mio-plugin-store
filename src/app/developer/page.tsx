@@ -1,150 +1,206 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
+import { motion } from "framer-motion";
+import { Plus, ExternalLink } from "lucide-react";
+import { GitHubIcon } from "@/components/icons/GitHubIcon";
 import { useI18n } from "@/i18n/context";
+import { useAuth } from "@/lib/auth-context";
+import { apiFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
+import { PageTransition } from "@/components/motion/PageTransition";
+import { AnimatedCounter } from "@/components/motion/AnimatedCounter";
+import { LoginButton } from "@/components/auth/LoginButton";
 
-// Placeholder dev data
-const myPlugins = [
-  { id: "ocean-night", name: "Ocean Night", downloads: 12580, revenue: 0, status: "published" },
-  { id: "sunset-glow", name: "Sunset Glow", downloads: 8420, revenue: 25182, status: "published" },
-  { id: "forest", name: "Forest", downloads: 6750, revenue: 13433.5, status: "review" },
-];
+interface DeveloperPlugin {
+  id: string;
+  name: string;
+  name_en: string;
+  downloads: number;
+  revenue: number;
+  status: string;
+}
+
+interface DeveloperStats {
+  total_plugins: number;
+  total_revenue: number;
+  total_downloads: number;
+}
 
 export default function DeveloperPage() {
   const { t } = useI18n();
-  const [loggedIn, setLoggedIn] = useState(false);
-  const [username, setUsername] = useState("");
+  const { user, loading: authLoading } = useAuth();
+  const [plugins, setPlugins] = useState<DeveloperPlugin[]>([]);
+  const [stats, setStats] = useState<DeveloperStats>({
+    total_plugins: 0,
+    total_revenue: 0,
+    total_downloads: 0,
+  });
+  const [loading, setLoading] = useState(true);
+  const [needsInstallation, setNeedsInstallation] = useState(false);
 
-  if (!loggedIn) {
+  useEffect(() => {
+    if (!user) {
+      setLoading(false);
+      return;
+    }
+
+    async function load() {
+      try {
+        const res = await apiFetch<{
+          plugins: DeveloperPlugin[];
+          stats: DeveloperStats;
+          needs_installation?: boolean;
+        }>("/api/public/developer/plugins");
+        setPlugins(res.plugins);
+        setStats(res.stats);
+        if (res.needs_installation) {
+          setNeedsInstallation(true);
+        }
+      } catch {
+        // API may not be available
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
+  }, [user]);
+
+  if (authLoading) {
     return (
-      <div className="mx-auto max-w-lg px-4 py-20 sm:px-6">
-        <div className="text-center mb-10">
-          <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-[#CAFF00]/10">
-            <svg className="h-8 w-8 text-[#CAFF00]" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" />
-            </svg>
-          </div>
-          <h1 className="text-3xl font-bold">{t.developer.title}</h1>
-          <p className="mt-2 text-muted-foreground">{t.developer.subtitle}</p>
-        </div>
-
-        <div className="rounded-2xl border border-border/50 bg-card p-6">
-          <div className="space-y-4">
-            <Input
-              placeholder={t.developer.loginPlaceholder}
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              className="bg-background border-border/50 h-11"
-            />
-            <Button
-              onClick={() => username.trim() && setLoggedIn(true)}
-              className="w-full bg-[#CAFF00] text-black font-semibold hover:bg-[#b8e600] h-11"
-              disabled={!username.trim()}
-            >
-              <svg className="mr-2 h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" />
-              </svg>
-              {t.developer.login}
-            </Button>
-          </div>
-        </div>
+      <div className="mx-auto max-w-7xl px-4 py-20 text-center">
+        <div className="h-8 w-8 mx-auto border-2 border-[#CAFF00] border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
 
-  const totalRevenue = myPlugins.reduce((sum, p) => sum + p.revenue, 0);
-  const totalDL = myPlugins.reduce((sum, p) => sum + p.downloads, 0);
+  if (!user) {
+    return (
+      <PageTransition className="mx-auto max-w-lg px-4 py-20 sm:px-6">
+        <div className="text-center mb-10">
+          <motion.div
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ type: "spring", stiffness: 200 }}
+            className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-[#CAFF00]/10"
+          >
+            <GitHubIcon className="h-8 w-8 text-[#CAFF00]" />
+          </motion.div>
+          <h1 className="text-3xl font-bold">{t.developer.title}</h1>
+          <p className="mt-2 text-muted-foreground">{t.developer.subtitle}</p>
+        </div>
+
+        <motion.div
+          initial={{ y: 20, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          transition={{ delay: 0.2 }}
+          className="flex justify-center"
+        >
+          <LoginButton />
+        </motion.div>
+      </PageTransition>
+    );
+  }
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+    <PageTransition className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-3xl font-bold">{t.developer.dashboard}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">@{username}</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            @{user.github_login}
+          </p>
         </div>
-        <Link href="/developer/submit">
-          <Button className="bg-[#CAFF00] text-black font-semibold hover:bg-[#b8e600]">
-            + {t.developer.submitPlugin}
-          </Button>
-        </Link>
+        <div className="flex items-center gap-3">
+          {needsInstallation && (
+            <a
+              href="https://github.com/apps/mio-island/installations/new"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <Button
+                variant="outline"
+                className="border-[#CAFF00]/30 text-[#CAFF00] hover:bg-[#CAFF00]/10"
+              >
+                <GitHubIcon className="h-4 w-4 mr-2" />
+                {t.developer.connectRepos}
+              </Button>
+            </a>
+          )}
+          <Link href="/developer/submit">
+            <Button className="bg-[#CAFF00] text-black font-semibold hover:bg-[#b8e600]">
+              <Plus className="h-4 w-4 mr-2" />
+              {t.developer.submitPlugin}
+            </Button>
+          </Link>
+        </div>
       </div>
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 mb-10">
-        <Card className="border-border/50 bg-card">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              {t.developer.myPlugins}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold text-[#CAFF00]">{myPlugins.length}</div>
-          </CardContent>
-        </Card>
-        <Card className="border-border/50 bg-card">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              {t.developer.totalRevenue}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold text-[#CAFF00]">
-              ${(totalRevenue / 100).toFixed(2)}
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="border-border/50 bg-card">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              {t.developer.totalDownloads}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold text-[#CAFF00]">
-              {totalDL.toLocaleString()}
-            </div>
-          </CardContent>
-        </Card>
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0 }}
+        >
+          <Card className="border-border/50 bg-card">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                {t.developer.myPlugins}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold text-[#CAFF00]">
+                <AnimatedCounter value={stats.total_plugins} />
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+        >
+          <Card className="border-border/50 bg-card">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                {t.developer.totalRevenue}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold text-[#CAFF00]">
+                <AnimatedCounter
+                  value={stats.total_revenue / 100}
+                  prefix="$"
+                  decimals={2}
+                />
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+        >
+          <Card className="border-border/50 bg-card">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                {t.developer.totalDownloads}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold text-[#CAFF00]">
+                <AnimatedCounter value={stats.total_downloads} />
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
       </div>
-
-      {/* Revenue Chart Placeholder */}
-      <Card className="border-border/50 bg-card mb-10">
-        <CardHeader>
-          <CardTitle className="text-lg">{t.developer.revenue}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="h-48 flex items-end gap-2 px-4">
-            {[35, 45, 30, 55, 70, 60, 80, 65, 90, 75, 85, 95].map((h, i) => (
-              <div
-                key={i}
-                className="flex-1 bg-[#CAFF00]/20 rounded-t-md transition-all duration-300 hover:bg-[#CAFF00]/40"
-                style={{ height: `${h}%` }}
-              />
-            ))}
-          </div>
-          <div className="flex justify-between px-4 mt-2 text-[10px] text-muted-foreground">
-            <span>Jan</span>
-            <span>Feb</span>
-            <span>Mar</span>
-            <span>Apr</span>
-            <span>May</span>
-            <span>Jun</span>
-            <span>Jul</span>
-            <span>Aug</span>
-            <span>Sep</span>
-            <span>Oct</span>
-            <span>Nov</span>
-            <span>Dec</span>
-          </div>
-        </CardContent>
-      </Card>
 
       {/* My Plugins Table */}
       <Card className="border-border/50 bg-card">
@@ -152,36 +208,65 @@ export default function DeveloperPage() {
           <CardTitle className="text-lg">{t.developer.myPlugins}</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
-          <div className="divide-y divide-border/50">
-            {myPlugins.map((p) => (
-              <div
-                key={p.id}
-                className="flex items-center justify-between px-6 py-4 hover:bg-accent/50 transition-colors"
-              >
-                <div className="flex items-center gap-3">
-                  <span className="font-medium text-sm">{p.name}</span>
-                  <Badge
-                    variant="outline"
-                    className={
-                      p.status === "published"
-                        ? "text-green-400 border-green-500/30 bg-green-500/10 text-[10px]"
-                        : "text-yellow-400 border-yellow-500/30 bg-yellow-500/10 text-[10px]"
-                    }
-                  >
-                    {p.status}
-                  </Badge>
-                </div>
-                <div className="flex items-center gap-6 text-sm text-muted-foreground">
-                  <span>{p.downloads.toLocaleString()} DL</span>
-                  <span className="text-[#CAFF00] font-medium">
-                    ${(p.revenue / 100).toFixed(2)}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
+          {loading ? (
+            <div className="p-6 text-center text-muted-foreground">
+              <div className="h-6 w-6 mx-auto border-2 border-[#CAFF00] border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : plugins.length === 0 ? (
+            <div className="p-10 text-center">
+              <p className="text-muted-foreground mb-4">
+                {t.developer.noPluginsYet}
+              </p>
+              <Link href="/developer/submit">
+                <Button className="bg-[#CAFF00] text-black font-semibold hover:bg-[#b8e600]">
+                  <Plus className="h-4 w-4 mr-2" />
+                  {t.developer.submitPlugin}
+                </Button>
+              </Link>
+            </div>
+          ) : (
+            <div className="divide-y divide-border/50">
+              {plugins.map((p, i) => (
+                <motion.div
+                  key={p.id}
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: i * 0.05 }}
+                  className="flex items-center justify-between px-6 py-4 hover:bg-accent/50 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <Link
+                      href={`/plugins/${p.id}`}
+                      className="font-medium text-sm hover:text-[#CAFF00] transition-colors flex items-center gap-1.5"
+                    >
+                      {p.name}
+                      <ExternalLink className="h-3 w-3 opacity-50" />
+                    </Link>
+                    <Badge
+                      variant="outline"
+                      className={
+                        p.status === "published"
+                          ? "text-green-400 border-green-500/30 bg-green-500/10 text-[10px]"
+                          : p.status === "review"
+                            ? "text-yellow-400 border-yellow-500/30 bg-yellow-500/10 text-[10px]"
+                            : "text-muted-foreground border-border/50 text-[10px]"
+                      }
+                    >
+                      {p.status}
+                    </Badge>
+                  </div>
+                  <div className="flex items-center gap-6 text-sm text-muted-foreground">
+                    <span>{p.downloads.toLocaleString()} DL</span>
+                    <span className="text-[#CAFF00] font-medium">
+                      ${(p.revenue / 100).toFixed(2)}
+                    </span>
+                  </div>
+                </motion.div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
-    </div>
+    </PageTransition>
   );
 }

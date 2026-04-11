@@ -1,13 +1,20 @@
 "use client";
 
-import { Suspense, useState, useMemo } from "react";
+import { Suspense, useState, useEffect, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
+import { motion, AnimatePresence } from "framer-motion";
+import { Search } from "lucide-react";
 import { useI18n } from "@/i18n/context";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { PluginCard } from "@/components/plugins/PluginCard";
-import { plugins, type PluginType } from "@/data/plugins";
+import { PageTransition } from "@/components/motion/PageTransition";
+import { StaggerGrid, StaggerItem } from "@/components/motion/StaggerGrid";
+import { AnimatedCard } from "@/components/motion/AnimatedCard";
+import { PluginCardSkeleton } from "@/components/motion/ShimmerSkeleton";
+import { apiFetch } from "@/lib/api";
+import type { Plugin, PluginType } from "@/data/plugins";
 
 const ITEMS_PER_PAGE = 9;
 
@@ -20,54 +27,53 @@ function BrowseContent() {
   const initialType = searchParams.get("type") as PluginType | null;
 
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<PluginType | "all">(
-    initialType || "all"
+    initialType || "all",
   );
   const [priceFilter, setPriceFilter] = useState<PriceFilter>("all");
   const [sortBy, setSortBy] = useState<SortOption>("popular");
   const [page, setPage] = useState(1);
+  const [plugins, setPlugins] = useState<Plugin[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [loading, setLoading] = useState(true);
 
-  const filtered = useMemo(() => {
-    let result = [...plugins];
+  // Debounce search
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(timer);
+  }, [search]);
 
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      result = result.filter(
-        (p) =>
-          p.name.zh.toLowerCase().includes(q) ||
-          p.name.en.toLowerCase().includes(q) ||
-          p.author.toLowerCase().includes(q) ||
-          p.tags.some((tag) => tag.toLowerCase().includes(q))
-      );
+  const fetchPlugins = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (debouncedSearch) params.set("search", debouncedSearch);
+      if (typeFilter !== "all") params.set("type", typeFilter);
+      if (priceFilter !== "all") params.set("price", priceFilter);
+      params.set("sort", sortBy);
+      params.set("page", String(page));
+      params.set("limit", String(ITEMS_PER_PAGE));
+
+      const res = await apiFetch<{
+        data: Plugin[];
+        total: number;
+      }>(`/api/public/plugins?${params.toString()}`);
+      setPlugins(res.data);
+      setTotalCount(res.total);
+    } catch {
+      setPlugins([]);
+      setTotalCount(0);
+    } finally {
+      setLoading(false);
     }
+  }, [debouncedSearch, typeFilter, priceFilter, sortBy, page]);
 
-    if (typeFilter !== "all") {
-      result = result.filter((p) => p.type === typeFilter);
-    }
+  useEffect(() => {
+    fetchPlugins();
+  }, [fetchPlugins]);
 
-    if (priceFilter === "free") {
-      result = result.filter((p) => p.price === 0);
-    } else if (priceFilter === "paid") {
-      result = result.filter((p) => p.price > 0);
-    }
-
-    if (sortBy === "newest") {
-      result.sort(
-        (a, b) =>
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-      );
-    } else {
-      result.sort((a, b) => b.downloads - a.downloads);
-    }
-
-    return result;
-  }, [search, typeFilter, priceFilter, sortBy]);
-
-  const totalPages = Math.ceil(filtered.length / ITEMS_PER_PAGE);
-  const paginated = filtered.slice(
-    (page - 1) * ITEMS_PER_PAGE,
-    page * ITEMS_PER_PAGE
-  );
+  const totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE);
 
   const typeOptions: { value: PluginType | "all"; label: string }[] = [
     { value: "all", label: t.filter.all },
@@ -88,17 +94,18 @@ function BrowseContent() {
   ];
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+    <PageTransition className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
       {/* Header */}
       <div className="mb-8">
         <h1 className="text-3xl font-bold">{t.nav.browse}</h1>
         <p className="mt-2 text-muted-foreground">
-          {plugins.length} {t.stats.plugins}
+          {totalCount} {t.stats.plugins}
         </p>
       </div>
 
       {/* Search */}
-      <div className="mb-6">
+      <div className="mb-6 relative max-w-md">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input
           placeholder={t.nav.search}
           value={search}
@@ -106,7 +113,7 @@ function BrowseContent() {
             setSearch(e.target.value);
             setPage(1);
           }}
-          className="max-w-md bg-card border-border/50 h-11 focus:border-[#CAFF00]/50 focus:ring-[#CAFF00]/20"
+          className="pl-10 bg-card border-border/50 h-11 focus:border-[#CAFF00]/50 focus:ring-[#CAFF00]/20"
         />
       </div>
 
@@ -118,8 +125,10 @@ function BrowseContent() {
           </div>
           <div className="flex flex-wrap gap-1.5">
             {typeOptions.map((opt) => (
-              <button
+              <motion.button
                 key={opt.value}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
                 onClick={() => {
                   setTypeFilter(opt.value);
                   setPage(1);
@@ -131,7 +140,7 @@ function BrowseContent() {
                 }`}
               >
                 {opt.label}
-              </button>
+              </motion.button>
             ))}
           </div>
         </div>
@@ -142,8 +151,10 @@ function BrowseContent() {
           </div>
           <div className="flex flex-wrap gap-1.5">
             {priceOptions.map((opt) => (
-              <button
+              <motion.button
                 key={opt.value}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
                 onClick={() => {
                   setPriceFilter(opt.value);
                   setPage(1);
@@ -155,7 +166,7 @@ function BrowseContent() {
                 }`}
               >
                 {opt.label}
-              </button>
+              </motion.button>
             ))}
           </div>
         </div>
@@ -166,8 +177,10 @@ function BrowseContent() {
           </div>
           <div className="flex flex-wrap gap-1.5">
             {sortOptions.map((opt) => (
-              <button
+              <motion.button
                 key={opt.value}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
                 onClick={() => setSortBy(opt.value)}
                 className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
                   sortBy === opt.value
@@ -176,61 +189,89 @@ function BrowseContent() {
                 }`}
               >
                 {opt.label}
-              </button>
+              </motion.button>
             ))}
           </div>
         </div>
       </div>
 
       {/* Active Filters */}
-      {(typeFilter !== "all" || priceFilter !== "all" || search) && (
-        <div className="mb-6 flex items-center gap-2 flex-wrap">
-          {typeFilter !== "all" && (
-            <Badge
-              variant="secondary"
-              className="bg-[#CAFF00]/10 text-[#CAFF00] border border-[#CAFF00]/20 cursor-pointer"
-              onClick={() => setTypeFilter("all")}
-            >
-              {typeOptions.find((o) => o.value === typeFilter)?.label} &times;
-            </Badge>
-          )}
-          {priceFilter !== "all" && (
-            <Badge
-              variant="secondary"
-              className="bg-[#CAFF00]/10 text-[#CAFF00] border border-[#CAFF00]/20 cursor-pointer"
-              onClick={() => setPriceFilter("all")}
-            >
-              {priceOptions.find((o) => o.value === priceFilter)?.label} &times;
-            </Badge>
-          )}
-          {search && (
-            <Badge
-              variant="secondary"
-              className="bg-[#CAFF00]/10 text-[#CAFF00] border border-[#CAFF00]/20 cursor-pointer"
-              onClick={() => setSearch("")}
-            >
-              &ldquo;{search}&rdquo; &times;
-            </Badge>
-          )}
-        </div>
-      )}
+      <AnimatePresence>
+        {(typeFilter !== "all" || priceFilter !== "all" || search) && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            className="mb-6 flex items-center gap-2 flex-wrap"
+          >
+            {typeFilter !== "all" && (
+              <Badge
+                variant="secondary"
+                className="bg-[#CAFF00]/10 text-[#CAFF00] border border-[#CAFF00]/20 cursor-pointer"
+                onClick={() => setTypeFilter("all")}
+              >
+                {typeOptions.find((o) => o.value === typeFilter)?.label}{" "}
+                &times;
+              </Badge>
+            )}
+            {priceFilter !== "all" && (
+              <Badge
+                variant="secondary"
+                className="bg-[#CAFF00]/10 text-[#CAFF00] border border-[#CAFF00]/20 cursor-pointer"
+                onClick={() => setPriceFilter("all")}
+              >
+                {priceOptions.find((o) => o.value === priceFilter)?.label}{" "}
+                &times;
+              </Badge>
+            )}
+            {search && (
+              <Badge
+                variant="secondary"
+                className="bg-[#CAFF00]/10 text-[#CAFF00] border border-[#CAFF00]/20 cursor-pointer"
+                onClick={() => setSearch("")}
+              >
+                &ldquo;{search}&rdquo; &times;
+              </Badge>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Grid */}
-      {paginated.length > 0 ? (
+      {loading ? (
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {paginated.map((plugin) => (
-            <PluginCard key={plugin.id} plugin={plugin} />
+          {[...Array(ITEMS_PER_PAGE)].map((_, i) => (
+            <PluginCardSkeleton key={i} />
           ))}
         </div>
+      ) : plugins.length > 0 ? (
+        <StaggerGrid className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          {plugins.map((plugin) => (
+            <StaggerItem key={plugin.id}>
+              <AnimatedCard>
+                <PluginCard plugin={plugin} />
+              </AnimatedCard>
+            </StaggerItem>
+          ))}
+        </StaggerGrid>
       ) : (
-        <div className="py-20 text-center">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="py-20 text-center"
+        >
           <p className="text-lg text-muted-foreground">{t.plugin.noResults}</p>
-        </div>
+        </motion.div>
       )}
 
       {/* Pagination */}
       {totalPages > 1 && (
-        <div className="mt-10 flex items-center justify-center gap-2">
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.3 }}
+          className="mt-10 flex items-center justify-center gap-2"
+        >
           <Button
             variant="outline"
             size="sm"
@@ -240,21 +281,36 @@ function BrowseContent() {
           >
             &larr;
           </Button>
-          {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
-            <Button
-              key={p}
-              variant={p === page ? "default" : "outline"}
-              size="sm"
-              onClick={() => setPage(p)}
-              className={
-                p === page
-                  ? "bg-[#CAFF00] text-black"
-                  : "border-border/50"
-              }
-            >
-              {p}
-            </Button>
-          ))}
+          {Array.from({ length: totalPages }, (_, i) => i + 1)
+            .filter(
+              (p) =>
+                p === 1 ||
+                p === totalPages ||
+                Math.abs(p - page) <= 2,
+            )
+            .map((p, i, arr) => {
+              const prev = arr[i - 1];
+              const showEllipsis = prev !== undefined && p - prev > 1;
+              return (
+                <span key={p} className="flex items-center gap-1">
+                  {showEllipsis && (
+                    <span className="px-1 text-muted-foreground">...</span>
+                  )}
+                  <Button
+                    variant={p === page ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setPage(p)}
+                    className={
+                      p === page
+                        ? "bg-[#CAFF00] text-black"
+                        : "border-border/50"
+                    }
+                  >
+                    {p}
+                  </Button>
+                </span>
+              );
+            })}
           <Button
             variant="outline"
             size="sm"
@@ -264,9 +320,9 @@ function BrowseContent() {
           >
             &rarr;
           </Button>
-        </div>
+        </motion.div>
       )}
-    </div>
+    </PageTransition>
   );
 }
 
@@ -278,7 +334,7 @@ export default function BrowsePage() {
           <div className="h-8 w-32 rounded bg-card animate-pulse mb-8" />
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {[...Array(6)].map((_, i) => (
-              <div key={i} className="h-64 rounded-2xl bg-card animate-pulse" />
+              <PluginCardSkeleton key={i} />
             ))}
           </div>
         </div>

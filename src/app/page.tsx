@@ -1,57 +1,120 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import Link from "next/link";
+import { motion } from "framer-motion";
+import { Palette, Smile, Volume2 } from "lucide-react";
 import { useI18n } from "@/i18n/context";
 import { Button } from "@/components/ui/button";
+import { apiFetch } from "@/lib/api";
+import type { Plugin } from "@/data/plugins";
+import { PageTransition } from "@/components/motion/PageTransition";
+import { AnimatedCounter } from "@/components/motion/AnimatedCounter";
+import { StaggerGrid, StaggerItem } from "@/components/motion/StaggerGrid";
+import { AnimatedCard } from "@/components/motion/AnimatedCard";
+import { PluginCardSkeleton } from "@/components/motion/ShimmerSkeleton";
 import { PluginCard } from "@/components/plugins/PluginCard";
-import {
-  plugins,
-  getFeaturedPlugins,
-  totalDownloads,
-  totalDevelopers,
-} from "@/data/plugins";
+
+interface StatsResponse {
+  total_plugins: number;
+  total_developers: number;
+  total_downloads: number;
+}
 
 const categoryIcons = {
-  themes: (
-    <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M4.098 19.902a3.75 3.75 0 005.304 0l6.401-6.402M6.75 21A3.75 3.75 0 013 17.25V4.125C3 3.504 3.504 3 4.125 3h5.25c.621 0 1.125.504 1.125 1.125v4.072M6.75 21a3.75 3.75 0 003.75-3.75V8.197M6.75 21h13.125c.621 0 1.125-.504 1.125-1.125v-5.25c0-.621-.504-1.125-1.125-1.125h-4.072M10.5 8.197l2.88-2.88c.438-.439 1.15-.439 1.59 0l3.712 3.713c.44.44.44 1.152 0 1.59l-2.879 2.88M6.75 17.25h.008v.008H6.75v-.008z" />
-    </svg>
-  ),
-  buddies: (
-    <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M15.182 15.182a4.5 4.5 0 01-6.364 0M21 12a9 9 0 11-18 0 9 9 0 0118 0zM9.75 9.75c0 .414-.168.75-.375.75S9 10.164 9 9.75 9.168 9 9.375 9s.375.336.375.75zm-.375 0h.008v.015h-.008V9.75zm5.625 0c0 .414-.168.75-.375.75s-.375-.336-.375-.75.168-.75.375-.75.375.336.375.75zm-.375 0h.008v.015h-.008V9.75z" />
-    </svg>
-  ),
-  sounds: (
-    <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M19.114 5.636a9 9 0 010 12.728M16.463 8.288a5.25 5.25 0 010 7.424M6.75 8.25l4.72-4.72a.75.75 0 011.28.53v15.88a.75.75 0 01-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.01 9.01 0 012.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75z" />
-    </svg>
-  ),
+  themes: <Palette className="h-6 w-6" />,
+  buddies: <Smile className="h-6 w-6" />,
+  sounds: <Volume2 className="h-6 w-6" />,
 };
 
 export default function HomePage() {
   const { t } = useI18n();
-  const featured = getFeaturedPlugins();
+  const [featured, setFeatured] = useState<Plugin[]>([]);
+  const [stats, setStats] = useState<StatsResponse>({
+    total_plugins: 0,
+    total_developers: 0,
+    total_downloads: 0,
+  });
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const [pluginsRes, statsRes] = await Promise.allSettled([
+          apiFetch<{ data: Plugin[] }>(
+            "/api/public/plugins?sort=popular&limit=6",
+          ),
+          apiFetch<StatsResponse>("/api/public/stats"),
+        ]);
+
+        if (pluginsRes.status === "fulfilled") {
+          setFeatured(pluginsRes.value.data);
+        }
+        if (statsRes.status === "fulfilled") {
+          setStats(statsRes.value);
+        }
+      } catch {
+        // API may not be available yet
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
+  }, []);
 
   return (
-    <div>
+    <PageTransition>
       {/* Hero */}
       <section className="relative overflow-hidden">
-        {/* Background effects */}
+        {/* Animated background */}
         <div className="absolute inset-0 -z-10">
-          <div className="absolute top-1/4 left-1/2 h-96 w-96 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#CAFF00]/5 blur-3xl" />
-          <div className="absolute bottom-0 right-1/4 h-64 w-64 rounded-full bg-[#CAFF00]/3 blur-3xl" />
+          <motion.div
+            animate={{
+              scale: [1, 1.1, 1],
+              opacity: [0.05, 0.1, 0.05],
+            }}
+            transition={{ duration: 8, repeat: Infinity, ease: "easeInOut" }}
+            className="absolute top-1/4 left-1/2 h-96 w-96 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#CAFF00] blur-3xl"
+          />
+          <motion.div
+            animate={{
+              scale: [1.1, 1, 1.1],
+              opacity: [0.03, 0.08, 0.03],
+            }}
+            transition={{
+              duration: 10,
+              repeat: Infinity,
+              ease: "easeInOut",
+              delay: 2,
+            }}
+            className="absolute bottom-0 right-1/4 h-64 w-64 rounded-full bg-[#CAFF00] blur-3xl"
+          />
         </div>
 
         <div className="mx-auto max-w-7xl px-4 py-24 sm:px-6 sm:py-32 lg:px-8 lg:py-40">
           <div className="mx-auto max-w-3xl text-center">
-            <h1 className="text-4xl font-bold tracking-tight sm:text-5xl lg:text-6xl">
+            <motion.h1
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6 }}
+              className="text-4xl font-bold tracking-tight sm:text-5xl lg:text-6xl"
+            >
               <span className="text-gradient-lime">{t.hero.title}</span>
-            </h1>
-            <p className="mt-6 text-lg text-muted-foreground sm:text-xl leading-relaxed">
+            </motion.h1>
+            <motion.p
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, delay: 0.15 }}
+              className="mt-6 text-lg text-muted-foreground sm:text-xl leading-relaxed"
+            >
               {t.hero.subtitle}
-            </p>
-            <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
+            </motion.p>
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, delay: 0.3 }}
+              className="mt-10 flex flex-wrap items-center justify-center gap-4"
+            >
               <Link href="/plugins">
                 <Button
                   size="lg"
@@ -69,7 +132,7 @@ export default function HomePage() {
                   {t.hero.develop}
                 </Button>
               </Link>
-            </div>
+            </motion.div>
           </div>
         </div>
       </section>
@@ -80,7 +143,7 @@ export default function HomePage() {
           <div className="grid grid-cols-3 gap-4 text-center">
             <div>
               <div className="text-2xl font-bold text-[#CAFF00] sm:text-3xl">
-                {plugins.length}
+                <AnimatedCounter value={stats.total_plugins} />
               </div>
               <div className="mt-1 text-xs text-muted-foreground sm:text-sm">
                 {t.stats.plugins}
@@ -88,7 +151,7 @@ export default function HomePage() {
             </div>
             <div>
               <div className="text-2xl font-bold text-[#CAFF00] sm:text-3xl">
-                {totalDevelopers}
+                <AnimatedCounter value={stats.total_developers} />
               </div>
               <div className="mt-1 text-xs text-muted-foreground sm:text-sm">
                 {t.stats.developers}
@@ -96,7 +159,10 @@ export default function HomePage() {
             </div>
             <div>
               <div className="text-2xl font-bold text-[#CAFF00] sm:text-3xl">
-                {(totalDownloads / 1000).toFixed(1)}K
+                <AnimatedCounter
+                  value={Math.round(stats.total_downloads / 1000)}
+                  suffix="K"
+                />
               </div>
               <div className="mt-1 text-xs text-muted-foreground sm:text-sm">
                 {t.stats.downloads}
@@ -109,31 +175,28 @@ export default function HomePage() {
       {/* Categories */}
       <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          {(["themes", "buddies", "sounds"] as const).map((cat) => (
-            <Link
+          {(["themes", "buddies", "sounds"] as const).map((cat, i) => (
+            <motion.div
               key={cat}
-              href={`/plugins?type=${cat === "buddies" ? "buddy" : cat === "themes" ? "theme" : "sound"}`}
-              className="group flex items-center gap-4 rounded-2xl border border-border/50 bg-card p-6 transition-all duration-300 hover:border-[#CAFF00]/30 hover:glow-lime"
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ delay: i * 0.1 }}
             >
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#CAFF00]/10 text-[#CAFF00] transition-colors group-hover:bg-[#CAFF00]/20">
-                {categoryIcons[cat]}
-              </div>
-              <div>
-                <h3 className="font-semibold group-hover:text-[#CAFF00] transition-colors">
-                  {t.categories[cat]}
-                </h3>
-                <p className="text-sm text-muted-foreground">
-                  {plugins.filter((p) =>
-                    cat === "buddies"
-                      ? p.type === "buddy"
-                      : cat === "themes"
-                        ? p.type === "theme"
-                        : p.type === "sound"
-                  ).length}{" "}
-                  {t.stats.plugins}
-                </p>
-              </div>
-            </Link>
+              <Link
+                href={`/plugins?type=${cat === "buddies" ? "buddy" : cat === "themes" ? "theme" : "sound"}`}
+                className="group flex items-center gap-4 rounded-2xl border border-border/50 bg-card p-6 transition-all duration-300 hover:border-[#CAFF00]/30 hover:glow-lime"
+              >
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#CAFF00]/10 text-[#CAFF00] transition-colors group-hover:bg-[#CAFF00]/20">
+                  {categoryIcons[cat]}
+                </div>
+                <div>
+                  <h3 className="font-semibold group-hover:text-[#CAFF00] transition-colors">
+                    {t.categories[cat]}
+                  </h3>
+                </div>
+              </Link>
+            </motion.div>
           ))}
         </div>
       </section>
@@ -149,12 +212,29 @@ export default function HomePage() {
             {t.featured.viewAll} &rarr;
           </Link>
         </div>
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {featured.slice(0, 6).map((plugin) => (
-            <PluginCard key={plugin.id} plugin={plugin} />
-          ))}
-        </div>
+
+        {loading ? (
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            {[...Array(6)].map((_, i) => (
+              <PluginCardSkeleton key={i} />
+            ))}
+          </div>
+        ) : featured.length > 0 ? (
+          <StaggerGrid className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            {featured.slice(0, 6).map((plugin) => (
+              <StaggerItem key={plugin.id}>
+                <AnimatedCard>
+                  <PluginCard plugin={plugin} />
+                </AnimatedCard>
+              </StaggerItem>
+            ))}
+          </StaggerGrid>
+        ) : (
+          <div className="py-12 text-center text-muted-foreground">
+            {t.plugin.noResults}
+          </div>
+        )}
       </section>
-    </div>
+    </PageTransition>
   );
 }

@@ -134,6 +134,10 @@
   }
 }
 
+@keyframes shimmer {
+  100% { transform: translateX(100%); }
+}
+
 /* Custom utilities */
 @layer utilities {
   .text-gradient-lime {

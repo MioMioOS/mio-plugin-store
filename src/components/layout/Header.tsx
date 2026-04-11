@@ -3,11 +3,15 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useI18n } from "@/i18n/context";
+import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
+import { LoginButton } from "@/components/auth/LoginButton";
+import { UserMenu } from "@/components/auth/UserMenu";
 import { useState } from "react";
 
 export function Header() {
   const { t, toggleLocale } = useI18n();
+  const { user, loading } = useAuth();
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -15,6 +19,7 @@ export function Header() {
     { href: "/", label: t.nav.home },
     { href: "/plugins", label: t.nav.browse },
     { href: "/developer", label: t.nav.developers },
+    ...(user ? [{ href: "/my-plugins", label: t.auth.myPlugins }] : []),
     { href: "/about", label: t.nav.about },
   ];
 
@@ -64,6 +69,13 @@ export function Header() {
           >
             {t.nav.langToggle}
           </Button>
+
+          {/* Auth */}
+          {!loading && (
+            <>
+              {user ? <UserMenu /> : <LoginButton />}
+            </>
+          )}
 
           {/* Mobile menu button */}
           <button

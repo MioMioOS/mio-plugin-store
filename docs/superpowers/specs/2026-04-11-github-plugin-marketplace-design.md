@@ -47,7 +47,9 @@ CREATE TABLE users (
   avatar_url TEXT,
   email TEXT,
   role TEXT DEFAULT 'user',  -- user / developer / admin
+  github_access_token TEXT,  -- encrypted, for GitHub API calls
   github_app_installation_id INTEGER,  -- if they installed the GitHub App
+  refresh_token TEXT,  -- for JWT refresh
   created_at TEXT DEFAULT (datetime('now'))
 );
 ```
@@ -63,6 +65,34 @@ ALTER TABLE plugins ADD COLUMN bundle_size INTEGER;
 ALTER TABLE plugins ADD COLUMN developer_id TEXT REFERENCES users(id);
 ALTER TABLE plugins ADD COLUMN downloads INTEGER DEFAULT 0;
 ALTER TABLE plugins ADD COLUMN icon_url TEXT;
+ALTER TABLE plugins ADD COLUMN current_version_id TEXT;  -- FK to plugin_versions
+```
+
+### New Table: plugin_versions
+
+```sql
+CREATE TABLE plugin_versions (
+  id TEXT PRIMARY KEY,
+  plugin_id TEXT REFERENCES plugins(id),
+  version TEXT NOT NULL,
+  commit_sha TEXT,
+  bundle_path TEXT,
+  bundle_size INTEGER,
+  release_notes TEXT,
+  status TEXT DEFAULT 'pending',  -- pending / approved / rejected
+  created_at TEXT DEFAULT (datetime('now'))
+);
+```
+
+### New Table: user_plugins (tracks free installs + purchases)
+
+```sql
+CREATE TABLE user_plugins (
+  user_id TEXT REFERENCES users(id),
+  plugin_id TEXT REFERENCES plugins(id),
+  installed_at TEXT DEFAULT (datetime('now')),
+  PRIMARY KEY (user_id, plugin_id)
+);
 ```
 
 ### Extend licenses table
@@ -80,7 +110,9 @@ No device limit. License validated by GitHub ID only.
 All public endpoints require CORS headers for miomio.chat origin.
 
 **Auth:**
-- `POST /api/public/auth/github` — Exchange GitHub OAuth code for session. Returns user info + JWT token.
+- `POST /api/public/auth/github` — Exchange GitHub OAuth code for session. Returns user info + JWT access token (15min) + refresh token.
+- `POST /api/public/auth/refresh` — Exchange refresh token for new access token.
+- `POST /api/public/auth/logout` — Invalidate refresh token.
 - `GET /api/public/auth/me` — Get current user info from JWT.
 
 **Plugins (public):**
@@ -95,8 +127,9 @@ All public endpoints require CORS headers for miomio.chat origin.
 - `GET /api/public/developer/plugins` — List developer's own plugins with status.
 
 **User (auth required):**
-- `GET /api/public/user/plugins` — List user's purchased/installed plugins.
+- `GET /api/public/user/plugins` — List user's purchased/installed plugins (from user_plugins table).
 - `POST /api/public/user/purchase` — Purchase plugin (Stripe integration, future).
+- `POST /api/public/user/install-token` — Generate a one-time download token (5min TTL, single use) for URL scheme install.
 
 **License (for App verification):**
 - `POST /api/public/license/verify` — Verify license key. Body: { key, plugin_id, github_id }. Returns validity status.
@@ -121,17 +154,33 @@ All public endpoints require CORS headers for miomio.chat origin.
 4. Redirected back to miomio.chat with installation_id
 5. Platform stores installation_id on user record
 
-### OAuth Flow
+### Authentication (OAuth) — separate from GitHub App installation
+
+OAuth uses the GitHub App's client ID for "Sign in with GitHub". This is purely for identity. Repo access comes later via GitHub App installation (developers only).
 
 1. User clicks "Sign in with GitHub" on miomio.chat
 2. Redirect to GitHub OAuth authorization (using GitHub App's client ID)
 3. GitHub redirects to miomio.chat/api/auth/callback with code
 4. Store sends code to Admin API (`POST /api/public/auth/github`)
-5. Admin exchanges code for access token with GitHub
+5. Admin exchanges code for GitHub access token
 6. Admin fetches user profile from GitHub API
-7. Admin creates/updates user record, generates JWT
-8. Returns JWT to Store, Store stores in cookie
-9. User is logged in
+7. Admin creates/updates user record, stores encrypted GitHub access token
+8. Admin generates JWT access token (15min) + refresh token
+9. Returns tokens to Store frontend
+10. Store stores access token in memory, refresh token in httpOnly cookie
+11. All subsequent API calls to cat.wdao.chat use `Authorization: Bearer <access_token>` header
+12. When access token expires, Store calls `/api/public/auth/refresh` with the refresh token cookie
+
+### GitHub App Installation (repo access) — developers only
+
+This is a separate step from OAuth login. Developers install the GitHub App to grant read access to their repos.
+
+1. Developer (already logged in) clicks "Connect Repos" on developer dashboard
+2. Redirected to GitHub App installation page (github.com/apps/mioIsland-plugin-review/installations/new)
+3. Developer selects which repos to grant access to
+4. Redirected back to miomio.chat/developer with installation_id
+5. Store sends installation_id to Admin API, stored on user record
+6. Now Admin can use the installation token to read those repos via GitHub API
 
 ### Source Code Review
 
@@ -159,17 +208,20 @@ When developer submits a plugin:
 
 ### Free Plugins
 1. User logged in → clicks "Install" on plugin page
-2. Triggers `mioIsland://install?id=PLUGIN_ID&token=JWT`
-3. App uses token to call download API
-4. Plugin installed to ~/.config/codeisland/plugins/
+2. Store requests one-time download token from Admin API (`POST /api/public/user/install-token`)
+3. Triggers `mioIsland://install?id=PLUGIN_ID&download_token=ONETIME_TOKEN`
+4. App uses one-time token to call download API (token valid 5min, single use)
+5. Plugin installed to ~/.config/codeisland/plugins/
+6. User-plugin relationship recorded in user_plugins table (enables "My Plugins")
 
 ### Paid Plugins (Future - Stripe)
 1. User clicks "Buy" → Stripe checkout
-2. Payment success → License key generated (bound to github_id)
+2. Payment success → License key generated (bound to github_id), recorded in user_plugins
 3. "Install" button appears
-4. Triggers `mioIsland://install?id=PLUGIN_ID&key=LICENSE_KEY`
-5. App downloads .bundle using license key
-6. App stores license locally, periodically verifies with server
+4. Store requests one-time download token
+5. Triggers `mioIsland://install?id=PLUGIN_ID&download_token=ONETIME_TOKEN`
+6. App downloads .bundle using one-time token
+7. App stores license locally, periodically verifies with server
 
 ### My Plugins Page
 - Shows all purchased + installed free plugins
@@ -182,7 +234,7 @@ When developer submits a plugin:
 - Next.js 16 App Router
 - Framer Motion for all animations
 - shadcn/ui components
-- No emoji anywhere
+- No emoji anywhere (replace existing emoji in mock data with SVG icons from lucide-react)
 
 ### Interaction & Animation Principles
 - Every user action has visual feedback
@@ -212,16 +264,50 @@ Bundle files stored at: `/data/bundles/{plugin_id}/{version}/{filename}.bundle`
 
 Admin server serves files via the download API endpoint with proper auth checks.
 
+## Route Separation (Admin server)
+
+Admin server has two route families with different auth and CORS:
+
+- `/api/auth/*` + `/api/admin/*` — Admin-only routes. Password-based session auth (existing). No CORS. Protected by admin middleware.
+- `/api/public/*` — Public API for Store. JWT Bearer auth. CORS allowed for miomio.chat only. Rate limited.
+
+These must not interfere with each other. Middleware checks the path prefix to apply the correct auth strategy.
+
 ## Security
 
-- JWT tokens with expiration (24h)
-- CORS restricted to miomio.chat origin
-- Bundle download requires authentication
-- Paid bundles require valid license
-- Admin API endpoints require admin session (existing auth)
-- Rate limiting on public API endpoints
+- JWT access tokens: 15min expiry, stored in memory (not localStorage)
+- Refresh tokens: 7-day expiry, httpOnly cookie, stored in DB for revocation
+- CORS restricted to miomio.chat origin (public API only)
+- Bundle download requires one-time token (5min TTL, single use), not JWT
+- Paid bundles additionally require valid license
+- Admin routes require admin session (existing password auth)
+- Rate limiting on public API endpoints (100 req/min per IP)
 - Bundle file size limit (50MB)
 - GitHub App uses minimum required permissions (read-only)
+- GitHub access tokens stored encrypted in database
+
+## Binary-Source Verification
+
+Uploaded .bundle files cannot be automatically verified against linked source code (macOS bundles are not reproducibly buildable). Mitigation:
+- Admin must manually test the .bundle in a sandboxed MioIsland instance before approving
+- Developer must provide a build.sh in their repo; admin can spot-check by building from source
+- Mismatch between source and binary is grounds for rejection and developer ban
+- Future: require Apple Developer ID code signing for .bundle files
+
+## API Error Response Format
+
+All public API endpoints return errors in a consistent format:
+
+```json
+{
+  "error": "Human-readable error message",
+  "code": "ERROR_CODE"
+}
+```
+
+Common codes: `UNAUTHORIZED`, `FORBIDDEN`, `NOT_FOUND`, `RATE_LIMITED`, `VALIDATION_ERROR`, `INTERNAL_ERROR`.
+
+Store frontend shows appropriate error UI with retry option when Admin API is unreachable.
 
 ## Out of Scope (Future)
 
@@ -231,3 +317,5 @@ Admin server serves files via the download API endpoint with proper auth checks.
 - Developer analytics dashboard
 - Plugin dependency management
 - App-side plugin store UI (C option)
+- CDN for bundle delivery (currently served directly from Admin server)
+- Automated build verification

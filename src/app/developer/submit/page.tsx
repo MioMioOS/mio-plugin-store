@@ -10,6 +10,8 @@ import {
   ChevronRight,
   FileArchive,
   X,
+  Search,
+  Settings2,
 } from "lucide-react";
 import { GitHubIcon } from "@/components/icons/GitHubIcon";
 import { useI18n } from "@/i18n/context";
@@ -38,6 +40,7 @@ export default function SubmitPage() {
   const [repos, setRepos] = useState<Repo[]>([]);
   const [needsInstallation, setNeedsInstallation] = useState(false);
   const [selectedRepo, setSelectedRepo] = useState("");
+  const [repoSearchQuery, setRepoSearchQuery] = useState("");
   const [pluginName, setPluginName] = useState("");
   const [pluginNameEn, setPluginNameEn] = useState("");
   const [pluginDesc, setPluginDesc] = useState("");
@@ -292,18 +295,86 @@ export default function SubmitPage() {
                   {loadingRepos ? (
                     <div className="h-11 bg-background rounded-lg border border-border/50 animate-pulse" />
                   ) : (
-                    <select
-                      value={selectedRepo}
-                      onChange={(e) => setSelectedRepo(e.target.value)}
-                      className="w-full h-11 rounded-lg bg-background border border-border/50 px-3 text-sm focus:border-[#CAFF00]/50 focus:ring-1 focus:ring-[#CAFF00]/20 outline-none"
-                    >
-                      <option value="">--</option>
-                      {repos.map((r) => (
-                        <option key={r.id} value={r.full_name}>
-                          {r.full_name}
-                        </option>
-                      ))}
-                    </select>
+                    <>
+                      {/* Search input — filters the list below */}
+                      <div className="relative mb-2">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                        <Input
+                          type="text"
+                          value={repoSearchQuery}
+                          onChange={(e) => setRepoSearchQuery(e.target.value)}
+                          placeholder={t.developer.searchRepos}
+                          className="pl-9 h-11 bg-background border-border/50 focus:border-[#CAFF00]/50 focus:ring-1 focus:ring-[#CAFF00]/20"
+                        />
+                      </div>
+
+                      {/* Scrollable repo list, fixed max height, no clipping */}
+                      <div className="rounded-lg border border-border/50 bg-background max-h-64 overflow-y-auto divide-y divide-border/30">
+                        {(() => {
+                          const q = repoSearchQuery.trim().toLowerCase();
+                          const filtered = q
+                            ? repos.filter((r) =>
+                                r.full_name.toLowerCase().includes(q),
+                              )
+                            : repos;
+
+                          if (filtered.length === 0) {
+                            return (
+                              <div className="px-4 py-6 text-sm text-muted-foreground text-center">
+                                {t.developer.noMatchingRepos}
+                              </div>
+                            );
+                          }
+
+                          return filtered.map((r) => {
+                            const active = selectedRepo === r.full_name;
+                            return (
+                              <button
+                                type="button"
+                                key={r.id}
+                                onClick={() => setSelectedRepo(r.full_name)}
+                                className={`w-full text-left px-4 py-3 text-sm transition-colors flex items-center gap-2 ${
+                                  active
+                                    ? "bg-[#CAFF00]/10 text-foreground"
+                                    : "hover:bg-accent/30"
+                                }`}
+                              >
+                                <GitHubIcon
+                                  className={`h-4 w-4 shrink-0 ${
+                                    active
+                                      ? "text-[#CAFF00]"
+                                      : "text-muted-foreground"
+                                  }`}
+                                />
+                                <span className="truncate flex-1">
+                                  {r.full_name}
+                                </span>
+                                {active && (
+                                  <Check className="h-4 w-4 text-[#CAFF00] shrink-0" />
+                                )}
+                              </button>
+                            );
+                          });
+                        })()}
+                      </div>
+
+                      {/* Always-visible "don't see your repo?" link — GitHub App
+                          scopes repos individually, new repos need manual grant */}
+                      <a
+                        href="https://github.com/apps/mio-island/installations/new"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-3 flex items-center gap-2 text-sm text-muted-foreground hover:text-[#CAFF00] transition-colors"
+                      >
+                        <Settings2 className="h-4 w-4" />
+                        <span>
+                          {t.developer.notSeeingRepo}{" "}
+                          <span className="underline underline-offset-4">
+                            {t.developer.configureAccess}
+                          </span>
+                        </span>
+                      </a>
+                    </>
                   )}
                 </div>
 
